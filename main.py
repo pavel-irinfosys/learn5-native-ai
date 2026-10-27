@@ -15,7 +15,7 @@ def get_model(device, dtype):
         # nn.Tanh(),
         nn.Linear(5, 1),
     ).to(device=device, dtype=dtype)
-    
+    model = torch.compile(model, mode="reduce-overhead")
     return model
 
 def gen_out(x_seq, device, dtype):
@@ -32,7 +32,7 @@ def gen_fold(n, k, device):
     return folds
 
 def get_optimizer(model, lr=1e-2):
-    return torch.optim.Adam(model.parameters(), lr=lr)
+    return torch.optim.Adam(model.parameters(), lr=lr, fused=True)
 
 def get_loss():
     return nn.MSELoss()
