@@ -5,7 +5,7 @@ import torch.nn as nn
 import time
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-D_TYPE = torch.float64
+D_TYPE = torch.float32
 
 def get_model(device, dtype):
     model = nn.Sequential(
@@ -51,7 +51,7 @@ def learn(model, x, target, loss_fn, optimizer, epochs=2000):
     return loss.item()
 
 def main():
-    n = 1000
+    n = 100_000
     k = 50
     print(DEVICE)
     model = get_model(DEVICE, D_TYPE)
@@ -69,10 +69,12 @@ def main():
         x_train, y_train = x_all[train_idx], y_all[train_idx]
         x_val,   y_val   = x_all[val_idx],   y_all[val_idx]
 
-        train_loss = learn(model=model, x=x_train, target=y_train, loss_fn=loss_fn, optimizer=optimizer, epochs=1000)
-        # elapsed = time.perf_counter() - start
+        train_loss = learn(model=model, x=x_train, target=y_train, loss_fn=loss_fn, optimizer=optimizer, epochs=100)
+        if i % 100:
+            with torch.no_grad():
+                elapsed = time.perf_counter() - start
+                print(f"elapsed: {elapsed} :: train_loss: {train_loss}")
 
-        # with torch.no_grad():
         #     val_loss = loss_fn(model(x_val), y_val).item()
         #     val_losses.append(val_loss)
         #     print(f"fold {i:2d}  train {train_loss:.3e}  val {val_loss:.3e}")
