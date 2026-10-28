@@ -1,30 +1,40 @@
 
-
 import torch
 import torch.nn as nn
 import time
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-D_TYPE = torch.float32
+D_TYPE = torch.float16
 
-def get_model(device, dtype):
+def gen_data(n, dim, device, dType):
+    high = 1
+    low = -1
+    return torch.rand(n, dim, device=device, dtype=dType) * (high - low) + low
+
+def gen_out(x, device, dType):
+    x = x.to(device=device, dtype=dType)
+    # sign(x) * |x|^0.33 keeps the term real for negative x
+    root_term = torch.sign(x) * torch.abs(x).pow(0.33)
+    return 7.3 * root_term + 0.3 * x.pow(2) + 0.3
+
+
+def get_model(dim, device, dtype):
+    hidden_net = 32
     model = nn.Sequential(
-        nn.Linear(1, 5),
+        nn.Linear(dim, hidden_net),
         nn.Tanh(),
-        # nn.Linear(32, 32),
-        # nn.Tanh(),
-        nn.Linear(5, 1),
+        nn.Linear(hidden_net, hidden_net),
+        nn.Tanh(),
+        nn.Linear(hidden_net, hidden_net),
+        nn.Tanh(),
+        nn.Linear(hidden_net, hidden_net),
+        nn.Tanh(),
+        nn.Linear(hidden_net, hidden_net),
+        nn.Tanh(),
+        nn.Linear(hidden_net, dim),
     ).to(device=device, dtype=dtype)
     model = torch.compile(model, mode="reduce-overhead")
     return model
-
-def gen_out(x_seq, device, dtype):
-    # x_seq = torch.linspace(0, 1, 100, device=DEVICE, dtype=D_TYPE).unsqueeze(1)
-    y = (3 * (x_seq ** 2)) - (2 * x_seq) + 0
-    return y
-
-def gen_data(n, device, dtype):
-    return torch.rand(n, 1, device=DEVICE, dtype=D_TYPE)
 
 def gen_fold(n, k, device):
     idx = torch.randperm(n, device=device)
@@ -37,6 +47,7 @@ def get_optimizer(model, lr=1e-2):
 def get_loss():
     return nn.MSELoss()
 
+
 def learn(model, x, target, loss_fn, optimizer, epochs=2000):
     for epoch in range(epochs):
         optimizer.zero_grad()          # clear old gradients
@@ -44,24 +55,19 @@ def learn(model, x, target, loss_fn, optimizer, epochs=2000):
         loss = loss_fn(pred, target)   # compute loss
         loss.backward()                # compute gradients
         optimizer.step()               # update weights
- 
-        # if epoch % 200 == 0:
-        #     print(f"epoch {epoch:5d}  loss {loss.item():.3e}")
- 
-    return loss.item()
 
 def main():
     n = 100_000
-    k = 50
-    print(DEVICE)
-    model = get_model(DEVICE, D_TYPE)
-    x_all = gen_data(n, device=DEVICE, dtype=D_TYPE)
-    y_all = gen_out(x_all, device=DEVICE, dtype=D_TYPE)
+    dim = 7
+    k = 20
+    x_all = gen_data(n, dim, device=DEVICE, dType=D_TYPE)
+    y_all = gen_out(x_all, device=DEVICE, dType=D_TYPE)
+    model = get_model(dim=dim, device=DEVICE, dtype=D_TYPE)
     folds = gen_fold(n, k, DEVICE)
-    val_losses = []
-
     loss_fn = get_loss()
     optimizer = get_optimizer(model)
+    # print(x_all)
+    # print(y_all)
     start = time.perf_counter()
     for i in range(k):
         val_idx = folds[i]
@@ -69,7 +75,12 @@ def main():
         x_train, y_train = x_all[train_idx], y_all[train_idx]
         x_val,   y_val   = x_all[val_idx],   y_all[val_idx]
 
-        train_loss = learn(model=model, x=x_train, target=y_train, loss_fn=loss_fn, optimizer=optimizer, epochs=100)
+        train_loss = learn(
+            model=model, 
+            x=x_train, target=y_train, 
+            loss_fn=loss_fn, optimizer=optimizer, 
+            epochs=100
+        )
         if i % 100:
             with torch.no_grad():
                 elapsed = time.perf_counter() - start
@@ -80,11 +91,15 @@ def main():
         #     print(f"fold {i:2d}  train {train_loss:.3e}  val {val_loss:.3e}")
         #     print(f"   pred  :{model(x_val).squeeze().tolist()}")
         #     print(f"   target:{y_val.squeeze().tolist()}")
+    
     eta = time.perf_counter() - start
     with torch.no_grad():
         val_loss = loss_fn(model(x_all[folds[0]]), y_all[folds[0]]).item()
         print(f"eta: {eta} mean val loss:", val_loss)
 
 
+    
+
 if __name__ == "__main__":
     main()
+
