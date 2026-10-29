@@ -105,6 +105,7 @@ def main():
     n = 300_000
     dim = 7
     k = 20
+<<<<<<< HEAD
     for _ in range(100):
         x_all = gen_data(n, dim, device=DEVICE, dType=D_TYPE)
         y_all = gen_out(x_all, device=DEVICE, dType=D_TYPE)
@@ -119,6 +120,21 @@ def main():
         with torch.no_grad():
             val_loss = loss_fn(model(x_all[folds[0]]), y_all[folds[0]]).item()
             print(f"eta: {eta} mean val loss:", val_loss)
+=======
+    x_all = gen_data(n, dim, device=DEVICE, dType=D_TYPE)
+    y_all = gen_out(x_all, device=DEVICE, dType=D_TYPE)
+    model = get_or_load_model("models/model.pt", dim=dim, device=DEVICE, dtype=D_TYPE)
+    folds = gen_fold(n, k, DEVICE)
+    loss_fn = get_loss()
+    optimizer = get_optimizer(model)
+    start = time.perf_counter()
+    # train(x_all=x_all, y_all=y_all, k=k, folds=folds, loss_fn=loss_fn, optimizer=optimizer, model=model)
+
+    with torch.no_grad():
+        val_loss = loss_fn(model(x_all[folds[0]]), y_all[folds[0]]).item()
+        eta = time.perf_counter() - start
+        print(f"eta: {eta} mean val loss:", val_loss)
+>>>>>>> 92f9eef (load and ck)
 
         save_model(model, "models/model.pt", dim=dim)
 
