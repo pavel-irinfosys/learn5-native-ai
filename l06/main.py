@@ -7,6 +7,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
 from matplotlib.animation import FuncAnimation
+import argparse
 
 NP_D_TYPE = np.float32
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,13 +59,15 @@ def prepare_data(n_steps=50_000, seed=0, val_frac=0.2):
     return Xtr, Ytr, Xva, Yva, stats
 
 
-def get_model(in_dim=5, out_dim=4, hidden=128, n_layers=3, act=nn.Tanh):
+def get_model(in_dim=5, out_dim=4, hidden=128, n_layers=3, act=nn.Tanh, device=DEVICE):
     layers, d = [], in_dim
     for _ in range(n_layers):
         layers += [nn.Linear(d, hidden), act()]
         d = hidden
     layers.append(nn.Linear(d, out_dim))
-    return nn.Sequential(*layers)
+    model = nn.Sequential(*layers)
+    model.to(device)
+    return model
 
 
 def train(model, Xtr, Ytr, Xva, Yva, epochs=50, lr=1e-3, batch_size=256):
@@ -88,7 +91,8 @@ def train(model, Xtr, Ytr, Xva, Yva, epochs=50, lr=1e-3, batch_size=256):
         with torch.no_grad():
             val = loss_fn(model(Xva), Yva).item()
         print(f"epoch {epoch+1:02d}  train {total/len(Xtr):.5f}  val {val:.5f}")
-    return model
+
+
 
 def save_checkpoint(model, stats, path=MODEL_PATH):
     os.makedirs(os.path.dirname(path), exist_ok=True)   # torch.save fails if the folder is missing
@@ -122,8 +126,12 @@ def evaluate(model, stats, n_steps=10_000, seed=123):
 def predict_next_both(model, stats, obs):
     """Predict the next state for BOTH actions (0 = left, 1 = right) in one pass."""
     inp = np.stack([np.append(obs, a) for a in (0, 1)]).astype(NP_D_TYPE)   # (2, 5)
+    # print(f"predict_next_both: obs={obs}, inp={inp}")
     X = prep(inp, stats["x_mean"], stats["x_std"]).to(DEVICE)
+    # print(f"predict_next_both: X={X}")
     delta = model(X).cpu().numpy() * stats["y_std"] + stats["y_mean"]       # un-normalize
+    # print(f"predict_next_both: delta={delta}")
+    # print(f"predict_next_both: obs + delta={obs + delta}")
     return obs + delta                                                       # (2, 4)
 
 
@@ -135,6 +143,7 @@ def action_from_model(model, stats, obs):
     that leaves the pole most upright and slow.
     """
     nxt = predict_next_both(model, stats, obs)
+    # print(f"action_from_model: obs={obs}, nxt={nxt}")
     cost = np.abs(nxt[:, 2]) + 0.3 * np.abs(nxt[:, 3]) + 0.05 * np.abs(nxt[:, 0])
     return int(np.argmin(cost))
 
@@ -145,6 +154,7 @@ def run_episode(model, stats, use_model=True, seed=0, max_steps=500, record_ever
     obs, _ = env.reset(seed=seed)
     rng = np.random.default_rng(seed)
     frames = []
+    is_done = True
     for t in range(max_steps):
         if use_model:
             action = action_from_model(model, stats, obs)
@@ -154,9 +164,10 @@ def run_episode(model, stats, use_model=True, seed=0, max_steps=500, record_ever
             frames.append((t, action, env.render()))
         obs, _, terminated, truncated, _ = env.step(action)
         if terminated or truncated:
+            is_done = False
             break
     env.close()
-    return t + 1, frames
+    return t + 1, frames, is_done
 
 
 def show_frames(frames, steps, title="", cols=5):
@@ -200,21 +211,42 @@ def play_frames(frames, title="", fps=50, save_path=None):
     plt.show()
     return anim         
 
+
 def main(retrain=False):
-    if os.path.exists(MODEL_PATH) and not retrain:
+    if os.path.exists(MODEL_PATH):
         print(f"Loading model from {MODEL_PATH}")
         model, stats = load_checkpoint()
     else:
+        model = get_model()
         Xtr, Ytr, Xva, Yva, stats = prepare_data(n_steps=50_000, seed=0)
-        model = train(get_model(), Xtr, Ytr, Xva, Yva, epochs=50, lr=1e-3, batch_size=256)
+        model = train(model, Xtr, Ytr, Xva, Yva, epochs=50, lr=1e-3, batch_size=256)
         save_checkpoint(model, stats)
 
     model.eval()
-    evaluate(model, stats)
-    # steps, frames = run_episode(model, stats, max_steps=500, use_model=True, seed=0)
-    # print(f"Model-based policy survived {steps} steps")
-    # anim = play_frames(frames, title="Model-based policy")
+    # evaluate(model, stats)
+
+    if retrain:
+        for _ in range(30):
+            Xtr, Ytr, Xva, Yva, stats = prepare_data(n_steps=50_000, seed=0)
+            model = train(model, Xtr, Ytr, Xva, Yva, epochs=50, lr=1e-5, batch_size=256)
+            save_checkpoint(model, stats)
+        
+
+    steps, frames, is_done = run_episode(model, stats, max_steps=10_000, use_model=True, seed=0)
+    print(f"Model-based policy survived {steps} steps")
+    print(f"Model-based policy {'completed' if is_done else 'failed'}")
+    anim = play_frames(frames, title=f"Model-based policy {'completed' if is_done else 'failed'}")
     
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--retrain",
+        action="store_true",
+        help="Train a new model instead of loading the checkpoint"
+    )
+
+    args = parser.parse_args()
+    print(f"Arguments: {args}")
+    main(retrain=args.retrain)
