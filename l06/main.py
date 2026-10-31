@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
+from matplotlib.animation import FuncAnimation
 
 NP_D_TYPE = np.float32
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,22 +159,46 @@ def run_episode(model, stats, use_model=True, seed=0, max_steps=500, record_ever
     return t + 1, frames
 
 
-def show_frames(frames, n_show=8, cols=4, path="frames.png"):
-    idx = np.linspace(0, len(frames) - 1, min(n_show, len(frames))).astype(int)
-    rows = int(np.ceil(len(idx) / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 2.8 * rows))
+def show_frames(frames, steps, title="", cols=5):
+    """Plot the (step, action, frame) list from run_episode in a grid."""
+    n = len(frames)
+    rows = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(3 * cols, 2.2 * rows))
     axes = np.atleast_1d(axes).ravel()
-    for ax in axes:
-        ax.axis("off")
-    for ax, i in zip(axes, idx):
-        t, action, img = frames[i]
+
+    for ax, (t, action, img) in zip(axes, frames):
         ax.imshow(img)
-        ax.set_title(f"step {t}   action = {'right' if action else 'left'}")
-    fig.tight_layout()
-    fig.savefig(path, dpi=100)
-    print("saved", path)
+        ax.set_title(f"t={t}  action={'R' if action else 'L'}", fontsize=9)
+        ax.axis("off")
+    for ax in axes[n:]:          # hide unused cells
+        ax.axis("off")
+
+    fig.suptitle(f"{title} (survived {steps} steps)")
+    plt.tight_layout()
     plt.show()
 
+
+def play_frames(frames, title="", fps=50, save_path=None):
+    """Play the (step, action, frame) list from run_episode as a movie."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.axis("off")
+    im = ax.imshow(frames[0][2])
+    txt = ax.set_title("")
+
+    def update(i):
+        t, action, img = frames[i]
+        im.set_data(img)
+        txt.set_text(f"{title}  t={t}  action={'R' if action else 'L'}")
+        return im, txt
+
+    anim = FuncAnimation(fig, update, frames=len(frames),
+                         interval=1000 / fps, blit=False, repeat=True)
+
+    if save_path:                      # optional: .gif needs pillow, .mp4 needs ffmpeg
+        anim.save(save_path, fps=fps)
+
+    plt.show()
+    return anim         
 
 def main(retrain=False):
     if os.path.exists(MODEL_PATH) and not retrain:
@@ -186,12 +211,10 @@ def main(retrain=False):
 
     model.eval()
     evaluate(model, stats)
-
-    # play with actions chosen by the model, and compare with random actions
-    steps_model, frames = run_episode(model, stats, use_model=True, seed=0)
-    steps_random, _ = run_episode(model, stats, use_model=False, seed=0)
-    print(f"survived  model-chosen actions: {steps_model} steps | random actions: {steps_random} steps")
-    show_frames(frames)
+    # steps, frames = run_episode(model, stats, max_steps=500, use_model=True, seed=0)
+    # print(f"Model-based policy survived {steps} steps")
+    # anim = play_frames(frames, title="Model-based policy")
+    
 
 if __name__ == "__main__":
     main()
