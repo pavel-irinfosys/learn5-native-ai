@@ -44,3 +44,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# todo : Option 1: Run many environments in parallel and batch them. This is the biggest win.
