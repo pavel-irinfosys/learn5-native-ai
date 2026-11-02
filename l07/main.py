@@ -38,7 +38,7 @@ def train(model):
 def main():
     model = ModelRL(dtype=D_TYPE, device=D_DEVICE)
     model.eval()
-    train(model)
+    # train(model)
     test(model) # type: ignore
 
 
