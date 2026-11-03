@@ -1,13 +1,15 @@
 import gymnasium as gym
 import torch
 from model_rl import ModelRL
+from collections import deque
+import sys
 
 D_TYPE = torch.float32
 D_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def test(model):
-    env = gym.make("CartPole-v1", render_mode="human")
+    env = gym.make("CartPole-v1", render_mode="human", max_episode_steps=1000)
     obs, _ = env.reset()
     done = False
     total_reward = 0
@@ -22,24 +24,33 @@ def test(model):
     print(f"total_reward: {total_reward}")
     env.close()
 
-def train(model):
-    best = 0
+def train(model, episodes=1000):
+    model.train()
     env = gym.make("CartPole-v1")
-    model = ModelRL(dtype=D_TYPE, device=D_DEVICE)
+    recent = deque(maxlen=20)
+    best = float("-inf")
 
-    for episode in range(1, 1001):
+    for episode in range(1, episodes + 1):
         total = model.train_step(env)
-        if episode % 50 == 0:
-            print(f"Episode {episode} | reward: {total:.0f}")
-        if total >= best:
-            best = total
-            model.save()
+        recent.append(total)
+
+        if len(recent) == 20:
+            avg = sum(recent) / 20
+            if avg > best:
+                best = avg
+                model.save()
+            if episode % 50 == 0:
+                print(f"Episode {episode} | last: {total:.0f} | avg20: {avg:.1f} | best: {best:.1f}")
+
+    env.close()
 
 def main():
     model = ModelRL(dtype=D_TYPE, device=D_DEVICE)
+    if "train" in sys.argv:
+        train(model)
+        model.load()
     model.eval()
-    # train(model)
-    test(model) # type: ignore
+    test(model)
 
 
 if __name__ == "__main__":
