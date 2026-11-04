@@ -22,6 +22,7 @@ class ModelRL(nn.Module):
         self.input_dim, self.out_dim = input_dim, out_dim
         self.gamma = gamma
         self.path = path
+        self.best = float("-inf") 
         self.__gen_model()
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)  # 2. optimizer
         self.load(self.path)
